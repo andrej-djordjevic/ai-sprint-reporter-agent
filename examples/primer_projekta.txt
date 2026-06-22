@@ -1,0 +1,8 @@
+Razvijamo javnu chat aplikaciju namenjenu siroj publici, slicnu WhatsApp-u, sa ocekivanih
+50.000 istovremenih korisnika u prvih 6 meseci. Aplikacija ce koristiti end-to-end enkripciju
+poruka, podrsku za slanje slika i video fajlova, push notifikacije, i potrebu za GDPR
+uskladjenoscu jer ce raditi u EU. Planirano je koriscenje MongoDB baze, Redis za cache,
+i CDN za distribuciju medijskih fajlova putem WebSocket protokola. Tim ima 8 developera
+i budzet je ogranicen na 3 meseca razvoja pre lansiranja. Autentikacija korisnika se vrsi
+putem JWT tokena sa refresh mehanizmom. Planirano je koriscenje Ollama LLM-a za interne
+AI funkcionalnosti, kao i integracija sa eksternim API-jima za verifikaciju brojeva telefona.
