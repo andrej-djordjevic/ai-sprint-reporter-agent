@@ -20,6 +20,7 @@ from agent.graph import run_risk_analysis
 from agent.models import check_ollama_availability, OLLAMA_BASE_URL
 from output.formatter import format_as_json, format_as_markdown
 from output.exporter import export_markdown, export_json
+from output.jira_exporter import create_jira_tasks_from_risks, JiraConfigError
 
 
 def parse_args():
@@ -37,6 +38,14 @@ def parse_args():
     parser.add_argument(
         "--output-dir", "-o", type=str, default="output/reports",
         help="Direktorijum u koji se zapisuju izvestaji"
+    )
+    parser.add_argument(
+        "--jira", action="store_true",
+        help="Kreira Jira Task issue-e od top rizika (zahteva JIRA_* varijable u .env)"
+    )
+    parser.add_argument(
+        "--jira-max", type=int, default=5,
+        help="Maksimalan broj Jira issue-a koji se kreira (default: 5)"
     )
     return parser.parse_args()
 
@@ -133,6 +142,23 @@ def main():
         print(str(i) + ". [" + risk.get("priority_level", "?") + "] " + risk.get("name", "")
               + " (Score: " + str(risk.get("exposure_score", "?")) + ")")
     print()
+
+    # ── Opciono: kreiranje Jira taskova od top rizika ──────────
+    if args.jira:
+        print("=" * 70)
+        print("Kreiranje Jira issue-a od top " + str(args.jira_max) + " rizika...")
+        try:
+            jira_results = create_jira_tasks_from_risks(top_risks, max_issues=args.jira_max)
+        except JiraConfigError as e:
+            print("GRESKA U JIRA KONFIGURACIJI: " + str(e))
+            sys.exit(1)
+
+        for r in jira_results:
+            if r["error"]:
+                print("  [GRESKA] " + r["risk_name"] + " -> " + r["error"])
+            else:
+                print("  [OK] " + r["risk_name"] + " -> " + r["key"] + " (" + r["url"] + ")")
+        print()
 
 
 if __name__ == "__main__":

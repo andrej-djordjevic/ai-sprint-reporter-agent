@@ -12,6 +12,7 @@ Pokrenuti ih posebno komandom: pytest tests/test_agent.py -m integration -v
 
 import sys
 import os
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -23,6 +24,13 @@ from agent.models import check_ollama_availability
 from agent.graph import run_risk_analysis
 from agent.nodes import _exposure_to_level, _extract_json
 from agent.models import LLMResponseError
+from output import jira_exporter
+from output.jira_exporter import (
+    create_issue_from_risk,
+    create_jira_tasks_from_risks,
+    JiraConfigError,
+    JiraAPIError,
+)
 
 
 # ── PRIMER 1: Mala chat aplikacija za interni timski rad ───────
@@ -145,6 +153,113 @@ class TestNodeHelpers:
     def test_extract_json_invalid_raises_error(self):
         with pytest.raises(LLMResponseError):
             _extract_json("Ovo nije JSON nikako.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# UNIT TESTOVI - output/jira_exporter.py (Jira API pozivi su mock-ovani)
+# ═══════════════════════════════════════════════════════════════
+
+SAMPLE_RISK = {
+    "id": "R02",
+    "category": "Staffing",
+    "name": "Nedovoljan tim",
+    "description": "Manji broj developera nego sto je potrebno za rok.",
+    "probability": 5,
+    "impact": 4,
+    "exposure_score": 20,
+    "priority_level": "HIGH",
+    "action": "Hire dodatnog tehnickog lidera.",
+}
+
+JIRA_CONFIG = dict(
+    base_url="https://example.atlassian.net",
+    email="user@example.com",
+    api_token="dummy-token",
+    project_key="CRA",
+)
+
+
+class TestJiraExporter:
+    @pytest.fixture(autouse=True)
+    def _no_real_jira_env(self, monkeypatch):
+        """Sprecava da testovi ikad pogode pravi Jira API zbog lokalnog .env fajla."""
+        monkeypatch.setattr(jira_exporter, "JIRA_BASE_URL", "")
+        monkeypatch.setattr(jira_exporter, "JIRA_EMAIL", "")
+        monkeypatch.setattr(jira_exporter, "JIRA_API_TOKEN", "")
+        monkeypatch.setattr(jira_exporter, "JIRA_PROJECT_KEY", "")
+
+    def test_create_issue_from_risk_missing_config_raises_error(self):
+        with pytest.raises(JiraConfigError):
+            create_issue_from_risk(SAMPLE_RISK, base_url="", email="", api_token="", project_key="")
+
+    @patch("output.jira_exporter.requests.post")
+    def test_create_issue_from_risk_success(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"key": "CRA-6"}
+        mock_post.return_value = mock_response
+
+        result = create_issue_from_risk(SAMPLE_RISK, **JIRA_CONFIG)
+
+        assert result["key"] == "CRA-6"
+        assert result["url"] == "https://example.atlassian.net/browse/CRA-6"
+
+        sent_payload = mock_post.call_args.kwargs["json"]
+        assert sent_payload["fields"]["project"]["key"] == "CRA"
+        assert sent_payload["fields"]["issuetype"]["name"] == "Task"
+        assert sent_payload["fields"]["priority"]["name"] == "High"
+        assert "[HIGH] Nedovoljan tim" == sent_payload["fields"]["summary"]
+
+    @patch("output.jira_exporter.requests.post")
+    def test_create_issue_from_risk_http_error_raises_jira_api_error(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = "Bad request"
+        mock_post.return_value = mock_response
+
+        with pytest.raises(JiraAPIError):
+            create_issue_from_risk(SAMPLE_RISK, **JIRA_CONFIG)
+
+    def test_create_jira_tasks_from_risks_missing_config_raises_error(self, monkeypatch):
+        monkeypatch.setattr(jira_exporter, "JIRA_BASE_URL", "")
+        monkeypatch.setattr(jira_exporter, "JIRA_PROJECT_KEY", "")
+        with pytest.raises(JiraConfigError):
+            create_jira_tasks_from_risks([SAMPLE_RISK])
+
+    @patch("output.jira_exporter.requests.post")
+    def test_create_jira_tasks_from_risks_respects_max_issues(self, mock_post, monkeypatch):
+        monkeypatch.setattr(jira_exporter, "JIRA_BASE_URL", JIRA_CONFIG["base_url"])
+        monkeypatch.setattr(jira_exporter, "JIRA_EMAIL", JIRA_CONFIG["email"])
+        monkeypatch.setattr(jira_exporter, "JIRA_API_TOKEN", JIRA_CONFIG["api_token"])
+        monkeypatch.setattr(jira_exporter, "JIRA_PROJECT_KEY", JIRA_CONFIG["project_key"])
+
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"key": "CRA-6"}
+        mock_post.return_value = mock_response
+
+        risks = [dict(SAMPLE_RISK, id="R0" + str(i)) for i in range(3)]
+        results = create_jira_tasks_from_risks(risks, max_issues=2)
+
+        assert len(results) == 2
+        assert mock_post.call_count == 2
+
+    @patch("output.jira_exporter.requests.post")
+    def test_create_jira_tasks_from_risks_collects_per_issue_errors(self, mock_post, monkeypatch):
+        monkeypatch.setattr(jira_exporter, "JIRA_BASE_URL", JIRA_CONFIG["base_url"])
+        monkeypatch.setattr(jira_exporter, "JIRA_EMAIL", JIRA_CONFIG["email"])
+        monkeypatch.setattr(jira_exporter, "JIRA_API_TOKEN", JIRA_CONFIG["api_token"])
+        monkeypatch.setattr(jira_exporter, "JIRA_PROJECT_KEY", JIRA_CONFIG["project_key"])
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = "Bad request"
+        mock_post.return_value = mock_response
+
+        results = create_jira_tasks_from_risks([SAMPLE_RISK])
+
+        assert results[0]["key"] is None
+        assert results[0]["error"] is not None
 
 
 # ═══════════════════════════════════════════════════════════════
