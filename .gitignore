@@ -1,0 +1,8 @@
+
+output/reports/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.claude/settings.local.json
+
