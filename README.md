@@ -39,6 +39,7 @@ chat-risk-agent/
 ├── output/
 │   ├── formatter.py            # Markdown i JSON formatiranje
 │   ├── exporter.py             # Zapis na disk
+│   ├── jira_exporter.py        # Kreiranje Jira Task issue-a od top rizika
 │   └── reports/                # Generisani izveštaji (kreira se automatski)
 ├── tests/
 │   └── test_agent.py           # Unit i integration testovi (3 testna primera)
@@ -102,6 +103,15 @@ LLM_TEMPERATURE=0.1
 LLM_TIMEOUT=120
 ```
 
+Za Jira integraciju (opciono, vidi sekciju ispod) dodajte i:
+
+```
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_EMAIL=your-email@example.com
+JIRA_API_TOKEN=your-api-token
+JIRA_PROJECT_KEY=CRA
+```
+
 ---
 
 ## Korišćenje
@@ -140,6 +150,17 @@ TOP 5 PRIORITETNIH RIZIKA:
 ```
 
 Generisani izveštaji se čuvaju u `output/reports/risk_report.md` i `output/reports/risk_report.json`.
+
+### Kreiranje Jira taskova od top rizika
+
+```bash
+python main.py --file primer_projekta.txt --jira --jira-max 5
+```
+
+Za svaki od top N rizika kreira se Jira Task issue (podrazumevano u projektu definisanom
+sa `JIRA_PROJECT_KEY`), sa opisom rizika, exposure score-om, prioritetom (mapiran iz
+HIGH/MEDIUM/LOW u Highest–Lowest Jira skalu) i predloženom akcijom. Zahteva podešene
+`JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` i `JIRA_PROJECT_KEY` u `.env`.
 
 ---
 
@@ -188,6 +209,5 @@ Projekat je testiran na **3 različita primera** ulaznih podataka:
 ## Mogućnosti za unapređenje
 
 - Podrška za PDF ulazne dokumente
-- Automatska integracija sa JIRA API-jem za kreiranje zadataka od top rizika
 - Web/grafički korisnički interfejs
 - Praćenje promene rizika kroz vreme (poređenje verzija SRS dokumenta)
